@@ -1,6 +1,7 @@
 from collections import namedtuple
 from itertools import *
 from timeit import default_timer as timer
+import argparse
 
 from z3 import *  # Provided by `pip install z3-solver==`4.11.2.0`
 
@@ -250,26 +251,28 @@ def maxDistance(size):
     return (size + 1) ** 2 // 2 - 1  # Tighter bound than size**2
 
 
+def main():
+    parser = argparse.ArgumentParser(description="Generate a crossword puzzle from a word list.")
+    parser.add_argument("word_file", help="Path to a text file containing words, one per line.")
+    parser.add_argument("size", type=int, help="The size of the grid (size x size).")
+    parser.add_argument("min_quality", type=int, help="The minimum quality score (sum of lengths of placed words).")
+
+    args = parser.parse_args()
+
+    try:
+        with open(args.word_file, 'r') as f:
+            # Read words, strip whitespace, convert to uppercase, and ignore empty lines
+            words = [line.strip().upper() for line in f if line.strip()]
+        
+        if not words:
+            print(f"Error: No words found in '{args.word_file}'.")
+            exit(1)
+    except FileNotFoundError:
+        print(f"Error: Word file not found at '{args.word_file}'")
+        exit(1)
+
+    generateCrossword(words, args.size, args.min_quality)
+
+
 if __name__ == '__main__':
-    simple = ['AB', 'BCEH', 'DEFG', 'FI', 'HI']
-    hard = [
-        'WARCRAFT', 'RAYMAN', 'MYST', 'DOOM', 'EARTHWORMJIM',
-        'COMMANDOS', 'NOX', 'DIABLO', 'GIANTS', 'ANOTHERWORLD',
-        'FLASHBACK', 'STARCONTROL', 'DUNE', 'MARIO', 'TETRIS',
-        'SACRIFICE', 'FALLOUT', 'CONTRA', 'TANKWARS', 'SETTLERS',
-        'ALADDIN', 'METROID', 'PRINCE', 'CIVILIZATION', 'KEEPER',
-        'POPULOUS', 'XCOM', 'SIMCITY', 'HERETIC', 'QUAKE', 'ZORK',
-        'DIGGER', 'ZELDA', 'FFVII', 'CLAW', 'BLOODOMEN', 'SPYRO',
-        'BLOOD', 'DUKENUKEM', 'DESCENT', 'LOSTVIKINGS', 'GOBLINS',
-        'LOTUS', 'OUTRUN', 'PIRATES', 'WACKYWHEELS', 'LARRY',
-        'EXAPUNKS', 'SKUNNY', 'RAPTOR', 'BLACKTHORNE'
-    ]
-    medium = hard + [
-        'LBA', 'LODERUNNER', 'CIVILIZATION', 'SILENTHILL', 'GOTHIC',
-        'CRUSADER', 'TYRIAN', 'MDK', 'CASTLEVANIA', 'STARFLIGHT',
-        'AQUANOX', 'POD', 'JAZZ', 'MONKEYISLAND', 'SPIRITABYSS',
-        'TERRARIA', 'KEEN', 'TIM', 'ARCHON', 'IHNMAIMS', 'SANITARIUM'
-    ]
-    # generateCrossword(simple, size=4, minQuality=14)
-    generateCrossword(hard, size=12, minQuality=73)
-    # generateCrossword(medium, size=12, minQuality=73)
+    main()
