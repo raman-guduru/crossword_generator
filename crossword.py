@@ -2,15 +2,22 @@ from collections import namedtuple
 from itertools import *
 from timeit import default_timer as timer
 import argparse
+import sys
+import io
 
-from z3 import *  # Provided by `pip install z3-solver==`4.11.2.0`
+from z3 import *  # Provided by `pip install z3-solver==4.11.2.0`
+
+# Fix Windows console encoding for Unicode box-drawing characters
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 
 # Decorator for tracking progress and runtime
 def print_time(msg):
     def decorator(f):
         def wrapper(*args, **kwargs):
-            print(f'{msg} ... ', end='')
+            print(f'{msg} ... ', end='', flush=True)
             start = timer()
             res = f(*args, **kwargs)
             print('{:.2f}s'.format(timer() - start))
@@ -237,13 +244,23 @@ def printPlacement(placement, size):
             y = placement.y if placement.horizontal else placement.y + i
             grid[y][x] = c
 
-    # Pretty print grid
-    print('┌' + '┬'.join('─' * size) + '┐')
-    for y, row in enumerate(grid):
-        if y != 0 and y != len(grid):
-            print('├' + '┼'.join('─' * size) + '┤')
-        print('│' + '│'.join(row) + '│')
-    print('└' + '┴'.join('─' * size) + '┘')
+    # Pretty print grid with Unicode box-drawing characters
+    # Wrapped in try-except to fall back to ASCII if Unicode fails
+    try:
+        print('┌' + '┬'.join('─' * size) + '┐')
+        for y, row in enumerate(grid):
+            if y != 0 and y != len(grid):
+                print('├' + '┼'.join('─' * size) + '┤')
+            print('│' + '│'.join(row) + '│')
+        print('└' + '┴'.join('─' * size) + '┘')
+    except UnicodeEncodeError:
+        # Fallback to ASCII box drawing
+        print('+' + '+'.join('-' * size) + '+')
+        for y, row in enumerate(grid):
+            if y != 0 and y != len(grid):
+                print('+' + '+'.join('-' * size) + '+')
+            print('|' + '|'.join(row) + '|')
+        print('+' + '+'.join('-' * size) + '+')
 
 
 # Max distance between placed characters (if they form a component)
@@ -260,16 +277,19 @@ def main():
     args = parser.parse_args()
 
     try:
-        with open(args.word_file, 'r') as f:
+        with open(args.word_file, 'r', encoding='utf-8') as f:
             # Read words, strip whitespace, convert to uppercase, and ignore empty lines
             words = [line.strip().upper() for line in f if line.strip()]
         
         if not words:
             print(f"Error: No words found in '{args.word_file}'.")
-            exit(1)
+            sys.exit(1)
     except FileNotFoundError:
         print(f"Error: Word file not found at '{args.word_file}'")
-        exit(1)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error reading file: {e}")
+        sys.exit(1)
 
     generateCrossword(words, args.size, args.min_quality)
 

@@ -141,6 +141,7 @@ def encodeProblem(words, radius, minQuality, longest_word_to_pin=None):
                 is_prev_empty = grid[prev_cell] == char_empty if prev_cell in grid else True
                 seq_start = And(is_prev_empty, grid[curr_cell] != char_empty, grid[next_cell] != char_empty)
                 res.append(seq_start == Or(possible_placements[(q, r)][orientation]))
+    
     # Constraint: All letters form a single connected component (CC)
     max_dist = len(grid_coords) // 2
     cc_start = {(q, r): Bool(f'cc_start_{q}_{r}') for (q, r) in grid_coords}
@@ -184,10 +185,10 @@ def exportCNF(filepath, assertions):
     assert len(subgoals) == 1, "Tactic should have resulted in a single goal"
     if subgoals[0].inconsistent():
         print("Warning: UNSAT found during CNF conversion.")
-        # Return False to indicate failure
         return False
     with open(filepath, 'w') as f:
         f.write(subgoals[0].dimacs() + '\n')
+    return True  # Added return True on success
 
 @print_time("Solving")
 def solve(constraints, timeout_ms):
@@ -273,19 +274,22 @@ def generateHexCrossword(words, radius, minQuality, timeout_sec, cnf_file, break
     if result == sat:
         placement = interpret(model, p_vars, grid_vars.keys())
         printPlacement(placement, radius)
+        return placement  # Added return for Flask API integration
     elif result == unsat:
         print("\nConstraints are unsatisfiable. No solution exists.")
         print("Try reducing the min_quality value or providing more words.")
+        return None
     else:
         print(f"\nSolver timed out after {timeout_sec} seconds.")
         print("The problem may be too complex. Try increasing the timeout, reducing quality, or using a smaller grid.")
+        return None
 
 def main():
     parser = argparse.ArgumentParser(description="Generate a hexagonal crossword puzzle.")
     parser.add_argument("word_file", help="Path to a text file with words.")
     parser.add_argument("radius", type=int, help="The radius of the hexagonal grid.")
     parser.add_argument("min_quality", type=int, help="Minimum quality (sum of word lengths).")
-    parser.add_argument("--timeout", type=int, default=600, help="Solver timeout in seconds (default: 60).")
+    parser.add_argument("--timeout", type=int, default=600, help="Solver timeout in seconds (default: 600).")
     parser.add_argument("--cnf", type=str, default="hex_crossword.cnf", help="Export the problem to a CNF file at the given path.")
     parser.add_argument("--no-symmetry-break", action="store_false", dest="break_symmetry", help="Disable symmetry breaking constraint.")
 

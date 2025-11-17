@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hexagonal Crossword Puzzle Generator</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState } = React;
+        
+        // Lucide icons as inline SVG components
+        const Upload = ({ className = "w-6 h-6" }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+        );
+        
+        const Play = ({ className = "w-6 h-6" }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        );
+        
+        const Download = ({ className = "w-4 h-4" }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+        );
+        
+        const Loader2 = ({ className = "w-6 h-6" }) => (
+            <svg className={`${className} animate-spin`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+        );
+        
+        const CheckCircle = ({ className = "w-5 h-5" }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        );
+        
+        const AlertCircle = ({ className = "w-5 h-5" }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        );
+        
+        const Trash2 = ({ className = "w-5 h-5" }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+        );
+
+        const Hexagon = ({ className = "w-6 h-6" }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2l9 5v10l-9 5-9-5V7l9-5z" />
+            </svg>
+        );
+
+        const API_URL = 'http://localhost:5000/api';
+
+        // Hexagonal Grid Display Component
+        function HexagonalGridDisplay({ placements, radius }) {
+          if (!placements || placements.length === 0) {
+            return (
+              <div className="text-purple-300 text-center p-8">
+                No placements to display
+              </div>
+            );
+          }
+
+          // Build a grid of cells with their content
+          const grid = {};
+          
+          // Initialize empty grid - only include valid hex cells
+          for (let q = -radius; q <= radius; q++) {
+            for (let r = -radius; r <= radius; r++) {
+              const s = -q - r;
+              // Hex condition: sum of absolute values of cube coords <= 2*radius
+              if (Math.abs(q) + Math.abs(r) + Math.abs(s) <= 2 * radius) {
+                grid[`${q},${r}`] = { letter: '' };
+              }
+            }
+          }
+
+          // Direction vectors for hexagonal grid (matching Python code)
+          const directions = [
+            { dq: 1, dr: 0 },   // Direction 0: Constant r (moving along q-axis)
+            { dq: 0, dr: 1 },   // Direction 1: Constant q (moving along r-axis)
+            { dq: 1, dr: -1 },  // Direction 2: Constant s (moving diagonally)
+          ];
+
+          // Fill grid with words
+          placements.forEach((placement) => {
+            const { word, q, r, orientation } = placement;
+            const dir = directions[orientation];
+            
+            for (let i = 0; i < word.length; i++) {
+              const cellQ = q + dir.dq * i;
+              const cellR = r + dir.dr * i;
+              const key = `${cellQ},${cellR}`;
+              
+              if (grid[key]) {
+                // Only set letter if cell is empty or same letter (for intersections)
+                if (grid[key].letter === '' || grid[key].letter === word[i]) {
+                  grid[key].letter = word[i];
+                }
+              }
+            }
+          });
+
+          // Calculate display positions
+          const hexSize = 28;
+          const hexWidth = hexSize * 2;
+          const hexHeight = Math.sqrt(3) * hexSize;
+          
+          const cells = [];
+          for (const key in grid) {
+            const [q, r] = key.split(',').map(Number);
+            const cell = grid[key];
+            
+            // Convert axial coordinates to pixel coordinates
+            const x = hexSize * (3/2 * q);
+            const y = hexSize * (Math.sqrt(3)/2 * q + Math.sqrt(3) * r);
+            
+            cells.push({ q, r, x, y, ...cell });
+          }
+
+          // Find bounds for centering
+          const xs = cells.map(c => c.x);
+          const ys = cells.map(c => c.y);
+          const minX = Math.min(...xs) - hexWidth/2;
+          const maxX = Math.max(...xs) + hexWidth/2;
+          const minY = Math.min(...ys) - hexHeight/2;
+          const maxY = Math.max(...ys) + hexHeight/2;
+          
+          const width = maxX - minX + 40;
+          const height = maxY - minY + 40;
+          const offsetX = -minX + 20;
+          const offsetY = -minY + 20;
+
+          return (
+            <svg 
+              width={Math.min(width, 600)} 
+              height={Math.min(height, 600)} 
+              viewBox={`0 0 ${width} ${height}`}
+              className="mx-auto"
+            >
+              {cells.map((cell, idx) => {
+                const cx = cell.x + offsetX;
+                const cy = cell.y + offsetY;
+                const hasLetter = cell.letter !== '';
+                
+                // Hexagon points
+                const points = [];
+                for (let i = 0; i < 6; i++) {
+                  const angle = Math.PI / 3 * i;
+                  const px = cx + hexSize * Math.cos(angle);
+                  const py = cy + hexSize * Math.sin(angle);
+                  points.push(`${px},${py}`);
+                }
+                
+                return (
+                  <g key={idx}>
+                    <polygon
+                      points={points.join(' ')}
+                      fill={hasLetter ? '#8b5cf6' : '#1f2937'}
+                      stroke="#a78bfa"
+                      strokeWidth="1.5"
+                      opacity={hasLetter ? 0.9 : 0.2}
+                    />
+                    {hasLetter && (
+                      <text
+                        x={cx}
+                        y={cy}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fill="white"
+                        fontSize="16"
+                        fontWeight="bold"
+                        fontFamily="monospace"
+                      >
+                        {cell.letter.toUpperCase()}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+            </svg>
+          );
+        }
+
+        function HexCrosswordGenerator() {
+          const [wordFile, setWordFile] = useState(null);
+          const [uploadedData, setUploadedData] = useState(null);
+          const [radius, setRadius] = useState(3);
+          const [minQuality, setMinQuality] = useState(30);
+          const [status, setStatus] = useState('idle');
+          const [result, setResult] = useState(null);
+          const [errorMessage, setErrorMessage] = useState('');
+          const [logs, setLogs] = useState([]);
+          const [timing, setTiming] = useState(null);
+          const [cnfPath, setCnfPath] = useState(null);
+
+          const addLog = (message) => {
+            setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
+          };
+
+          const getCellCount = (r) => {
+            return 3 * r * (r + 1) + 1;
+          };
+
+          const handleFileUpload = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            setWordFile(file);
+            setLogs([]);
+            addLog(`Uploading ${file.name}...`);
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+              const response = await fetch(`${API_URL}/upload`, {
+                method: 'POST',
+                body: formData,
+              });
+
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+              }
+
+              const data = await response.json();
+
+              if (data.error) {
+                addLog(`✗ Error: ${data.error}`);
+                setErrorMessage(data.error);
+                setWordFile(null);
+              } else {
+                setUploadedData(data);
+                addLog(`✓ Loaded ${data.word_count} words from ${file.name}`);
+                addLog(`  Longest word: ${data.longest_word} (${data.longest_length} letters)`);
+                setErrorMessage('');
+              }
+            } catch (error) {
+              addLog(`✗ Connection error: ${error.message}`);
+              setErrorMessage('Failed to connect to server. Make sure the Flask backend is running on localhost:5000');
+              setWordFile(null);
+            }
+          };
+
+          const generateCrossword = async () => {
+            if (!uploadedData) {
+              setErrorMessage('Please upload a word file first');
+              return;
+            }
+
+            setStatus('processing');
+            setResult(null);
+            setErrorMessage('');
+            setLogs([]);
+            setCnfPath(null);
+            setTiming(null);
+            
+            addLog('Starting hexagonal crossword generation...');
+            addLog(`Hexagonal radius: ${radius} (~${getCellCount(radius)} cells)`);
+            addLog(`Minimum quality: ${minQuality}`);
+
+            try {
+              const response = await fetch(`${API_URL}/generate`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  filepath: uploadedData.filepath,
+                  radius: radius,
+                  min_quality: minQuality,
+                }),
+              });
+
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+              }
+
+              const data = await response.json();
+
+              if (data.logs) {
+                data.logs.forEach(log => addLog(log));
+              }
+
+              if (data.success) {
+                addLog(`✓ Success! Placed ${data.result.word_count} words (${data.result.total_length} symbols)`);
+                setResult(data.result);
+                setTiming(data.timing);
+                setCnfPath(data.cnf_path);
+                setStatus('success');
+              } else {
+                addLog(`✗ ${data.error || 'Unknown error'}`);
+                setErrorMessage(data.error || 'Generation failed');
+                setStatus('error');
+              }
+
+            } catch (error) {
+              addLog(`✗ Error: ${error.message}`);
+              setErrorMessage('Failed to generate crossword. Check server connection.');
+              setStatus('error');
+            }
+          };
+
+          const downloadCNF = async () => {
+            if (!cnfPath) {
+              setErrorMessage('CNF file not available');
+              return;
+            }
+
+            try {
+              const response = await fetch(`${API_URL}/download-cnf`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ cnf_path: cnfPath }),
+              });
+
+              if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'hex_crossword.cnf';
+                a.click();
+                window.URL.revokeObjectURL(url);
+                addLog('✓ CNF file downloaded');
+              } else {
+                addLog('✗ Failed to download CNF file');
+                setErrorMessage('Failed to download CNF file');
+              }
+            } catch (error) {
+              addLog(`✗ Download error: ${error.message}`);
+              setErrorMessage(`Download error: ${error.message}`);
+            }
+          };
+
+          const clearFile = () => {
+            setWordFile(null);
+            setUploadedData(null);
+            setResult(null);
+            setLogs([]);
+            setErrorMessage('');
+            setStatus('idle');
+            setCnfPath(null);
+            setTiming(null);
+          };
+
+          return (
+            <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 p-6">
+              <div className="max-w-7xl mx-auto">
+                <div className="text-center mb-8">
+                  <div className="flex items-center justify-center gap-3 mb-2">
+                    <Hexagon className="w-12 h-12 text-yellow-300" />
+                    <h1 className="text-5xl font-bold text-white">
+                      Hexagonal Crossword Generator
+                    </h1>
+                  </div>
+                  <p className="text-purple-200 text-lg">
+                    Generate crossword puzzles on a hexagonal grid using SAT/SMT solvers
+                  </p>
+                  <div className="mt-2 text-sm text-purple-300">
+                    Backend: {API_URL}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="space-y-6">
+                    <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+                      <h2 className="text-2xl font-semibold text-white mb-4 flex items-center gap-2">
+                        <Upload />
+                        Word List File
+                      </h2>
+                      
+                      <div className="space-y-4">
+                        {!wordFile ? (
+                          <label className="block">
+                            <div className="border-2 border-dashed border-purple-400 rounded-lg p-6 text-center cursor-pointer hover:border-purple-300 transition-colors">
+                              <input
+                                type="file"
+                                accept=".txt"
+                                onChange={handleFileUpload}
+                                className="hidden"
+                              />
+                              <div className="flex justify-center mb-3">
+                                <Upload className="w-12 h-12 text-purple-300" />
+                              </div>
+                              <p className="text-white font-medium mb-1">
+                                Click to upload word list
+                              </p>
+                              <p className="text-purple-200 text-sm">
+                                .txt file with one word per line
+                              </p>
+                            </div>
+                          </label>
+                        ) : (
+                          <div className="bg-green-500/20 border border-green-400 rounded-lg p-4">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-start gap-2 flex-1">
+                                <CheckCircle className="text-green-400 flex-shrink-0 mt-0.5" />
+                                <div className="text-sm">
+                                  <p className="text-green-100 font-medium">{wordFile.name}</p>
+                                  {uploadedData && (
+                                    <>
+                                      <p className="text-green-200">
+                                        {uploadedData.word_count} words loaded
+                                      </p>
+                                      <p className="text-green-300 text-xs mt-1">
+                                        Longest: {uploadedData.longest_word} ({uploadedData.longest_length} chars)
+                                      </p>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                              <button
+                                onClick={clearFile}
+                                className="text-green-300 hover:text-green-100 transition-colors"
+                              >
+                                <Trash2 />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+                      <h2 className="text-2xl font-semibold text-white mb-4 flex items-center gap-2">
+                        <Hexagon />
+                        Hexagonal Grid Configuration
+                      </h2>
+                      
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-white font-medium mb-2">
+                            Grid Radius: {radius} (~{getCellCount(radius)} cells)
+                          </label>
+                          <input
+                            type="range"
+                            min="2"
+                            max="8"
+                            value={radius}
+                            onChange={(e) => setRadius(Number(e.target.value))}
+                            className="w-full h-2 bg-purple-600 rounded-lg appearance-none cursor-pointer"
+                          />
+                          <div className="flex justify-between text-xs text-purple-300 mt-1">
+                            <span>2 (19 cells)</span>
+                            <span>8 (217 cells)</span>
+                          </div>
+                          <p className="text-purple-200 text-sm mt-2">
+                            Hexagonal radius: distance from center to edge
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-white font-medium mb-2">
+                            Minimum Quality: {minQuality}
+                          </label>
+                          <input
+                            type="range"
+                            min="10"
+                            max="200"
+                            step="10"
+                            value={minQuality}
+                            onChange={(e) => setMinQuality(Number(e.target.value))}
+                            className="w-full h-2 bg-purple-600 rounded-lg appearance-none cursor-pointer"
+                          />
+                          <div className="flex justify-between text-xs text-purple-300 mt-1">
+                            <span>Low (10)</span>
+                            <span>High (200)</span>
+                          </div>
+                          <p className="text-purple-200 text-sm mt-2">
+                            Sum of word lengths to place. Higher = more words required
+                          </p>
+                        </div>
+
+                        <div className="bg-blue-500/20 border border-blue-400 rounded-lg p-3">
+                          <h3 className="text-blue-100 font-semibold text-sm mb-1">Recommended Settings:</h3>
+                          <p className="text-blue-200 text-xs">
+                            • Small word list (20 words): Radius 3-4, Quality 30-50<br/>
+                            • Medium list (50 words): Radius 4-5, Quality 60-100<br/>
+                            • Large list (100+ words): Radius 5-7, Quality 100-150
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={generateCrossword}
+                      disabled={!uploadedData || status === 'processing'}
+                      className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-3 transition-all transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed"
+                    >
+                      {status === 'processing' ? (
+                        <>
+                          <Loader2 />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <Play />
+                          Generate Hexagonal Crossword
+                        </>
+                      )}
+                    </button>
+
+                    {timing && (
+                      <div className="bg-blue-500/20 border border-blue-400 rounded-lg p-4">
+                        <h3 className="text-blue-100 font-semibold mb-2">⚡ Performance</h3>
+                        <div className="grid grid-cols-2 gap-2 text-sm text-blue-200">
+                          <div>Encoding: {timing.encoding?.toFixed(2) || 'N/A'}s</div>
+                          <div>CNF Export: {timing.cnf_export?.toFixed(2) || 'N/A'}s</div>
+                          <div>Solving: {timing.solving?.toFixed(2) || 'N/A'}s</div>
+                          <div className="font-semibold">Total: {timing.total?.toFixed(2) || 'N/A'}s</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20 h-64 overflow-auto">
+                      <h2 className="text-2xl font-semibold text-white mb-4">
+                        Console Output
+                      </h2>
+                      
+                      {logs.length === 0 ? (
+                        <p className="text-purple-300 text-sm">
+                          Upload a word list and click "Generate Hexagonal Crossword" to start...
+                        </p>
+                      ) : (
+                        <div className="space-y-1 font-mono text-xs">
+                          {logs.map((log, idx) => (
+                            <div key={idx} className="text-green-300">
+                              {log}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {errorMessage && (
+                        <div className="mt-4 bg-red-500/20 border border-red-400 rounded-lg p-3 flex items-start gap-2">
+                          <AlertCircle className="text-red-400 flex-shrink-0 mt-0.5" />
+                          <p className="text-red-100 text-sm">{errorMessage}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {result && (
+                      <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+                        <div className="flex items-center justify-between mb-4">
+                          <h2 className="text-2xl font-semibold text-white flex items-center gap-2">
+                            <Hexagon />
+                            Hexagonal Grid
+                          </h2>
+                          {cnfPath && (
+                            <button
+                              onClick={downloadCNF}
+                              className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors text-sm"
+                            >
+                              <Download />
+                              CNF
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="mb-4 text-purple-200 text-sm">
+                          Placed {result.word_count} words ({result.total_length} symbols)
+                        </div>
+
+                        <div className="bg-black/30 rounded-lg p-6 overflow-auto flex justify-center items-center min-h-[400px]">
+                          <HexagonalGridDisplay placements={result.placements} radius={result.radius} />
+                        </div>
+
+                        <div className="mt-4">
+                          <h3 className="text-white font-semibold mb-2">Placed Words:</h3>
+                          <div className="grid grid-cols-2 gap-2 text-sm max-h-48 overflow-y-auto">
+                            {result.placements.map((p, idx) => (
+                              <div key={idx} className="text-purple-200 font-mono text-xs">
+                                {idx + 1}. {p.word} @ ({p.q},{p.r}) dir={p.orientation}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-8 text-center text-purple-300 text-sm">
+                  <p className="mb-2">
+                    <strong>Hexagonal Grid:</strong> Words are placed in 3 directions along hex axes
+                  </p>
+                  <p>
+                    Make sure the Flask backend is running on port 5000.
+                    Run: <code className="bg-black/30 px-2 py-1 rounded">python app1.py</code>
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<HexCrosswordGenerator />);
+    </script>
+</body>
+</html>
